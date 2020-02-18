@@ -1,0 +1,85 @@
+---
+title: "NBA Game Analysis"
+author: "Samuel Ivanecky"
+date: "2/14/2020"
+output: html_document
+---
+
+# Setup
+```{r}
+library(data.table)
+library(tidyverse)
+library(tidymodels)
+```
+
+# Load Data
+```{r}
+nba = read.csv("nba.games.stats.csv")
+```
+
+# Data Cleaning
+## Print structure of the data
+```{r}
+str(nba)
+```
+
+## Count number of missing in data
+```{r}
+# No missing data
+sum(is.na(nba))
+```
+
+## Rename columns
+```{r}
+names(nba) = c("index", "team", "game", "date", "home", "opponent", "win_loss", "team_pts", "opp_pts", "fg_made", "fg_atmpt", "fg_pct", "three_pt_made", 
+               "three_pt_atmpt", "three_pt_pct", "ft_made", "ft_atmpt", "ft_pct", "off_reb", "tot_reb", "assists", "steals", "blocks", "turnovers", "total_fouls", 
+               "opp_fg_made", "opp_fg_atmpt", "opp_fg_pct", "opp_three_pt_made", "opp_three_pt_atmpt", "opp_three_pt_pct", "opp_ft_made", "opp_ft_atmpt", 
+               "opp_ft_pct", "opp_off_reb", "opp_tot_reb", "opp_assists", "opp_steals", "opp_blocks", "opp_turnovers", "opp_tot_fouls")
+
+# Reprint for validation
+str(nba)
+```
+
+# Feature Engineering
+## Season
+Need to create a season variable that will group games into seasons based on the date of the game.
+```{r}
+# note that each season "ends" in April
+# Convert date to a date object
+nba$date = lubridate::ymd(nba$date)
+
+# Create seasons var
+nba = nba %>%
+  mutate(
+    season = case_when(
+      date > '2014-01-01' & date < '2015-05-01' ~ '14-15',
+      date > '2015-01-01' & date < '2016-05-01' ~ '15-16',
+      date > '2016-01-01' & date < '2017-05-01' ~ '16-17',
+      date > '2017-01-01' & date < '2018-05-01' ~ '17-18',
+      T ~ 'OTHER'
+    )
+  )
+
+# Convert to factor
+nba$season = as.factor(nba$season)
+
+# Print levels
+levels(nba$season)
+```
+
+## Distance Traveled
+Would be good to have a distance traveled var that calculates how far a team had to go for an away game
+
+## Win Pct
+Would be good to have team's winning pct at that point in time
+```{r}
+# Vectorize all the components
+```
+
+
+## Opp Win Pct
+Similarly, would be useful to have opponents winning pct
+
+
+
+

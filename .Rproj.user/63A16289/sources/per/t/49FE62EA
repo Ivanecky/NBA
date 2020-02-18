@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1581707530386.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1477051323",
+    "id" : "49FE62EA",
+    "lastKnownWriteTime" : 1581720689,
+    "last_content_update" : 1581720689904,
+    "path" : "~/Personal Projects/NBA/NBA Games Analysis.Rmd",
+    "project_path" : "NBA Games Analysis.Rmd",
+    "properties" : {
+        "cursorPosition" : "75,30",
+        "scrollLine" : "64",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}
