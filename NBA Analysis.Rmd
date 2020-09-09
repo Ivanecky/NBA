@@ -1,0 +1,254 @@
+---
+title: "NBA Game Predictions"
+output: html_document
+---
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load libraries
+library(tidymodels)
+library(dplyr)
+library(forecast)
+```
+
+# Load Data
+```{r}
+# Read in data
+nba <- read.csv("nba.games.stats.csv")
+```
+
+# Clean & Organize Data
+```{r}
+# Print structure of the data
+str(nba)
+
+# Convert Date to date and WINorLOSS to binary
+nba <- nba %>% 
+  mutate(
+    Date = lubridate::ymd(Date),
+    WINorLOSS = case_when(
+      WINorLOSS == 'W' ~ 1,
+      T ~ 0
+    )
+    )
+```
+
+## Separate Data by Season
+```{r}
+# Break into four seasons
+nba15 <- nba %>% filter(Date < '2015-07-01')
+nba16 <- nba %>% filter(Date > '2015-07-01' & Date < '2016-07-01')
+nba17 <- nba %>% filter(Date > '2016-07-01' & Date < '2017-07-01')
+nba18 <- nba %>% filter(Date > '2017-07-01')
+```
+
+## Rolling Functions
+```{r}
+# Function to subset each season
+getRollingTeams <- function(df){
+  # Select only required columns
+  df <- df %>% select(Team, Game, Date, WINorLOSS, TeamPoints, OpponentPoints, FieldGoals, FieldGoalsAttempted, FieldGoals., 
+                      X3PointShots, X3PointShotsAttempted, X3PointShots., FreeThrows, FreeThrowsAttempted, FreeThrows., 
+                      OffRebounds, TotalRebounds, Assists, Steals, Blocks, Turnovers, TotalFouls)
+  
+  # Create new variables: DefRebounds, PtDifferential
+  df <- df %>%
+    mutate(
+      DefRebounds = TotalRebounds - OffRebounds,
+      PtDifferential = TeamPoints - OpponentPoints
+    )
+  
+  # Create rolling variables
+  teams <- df %>%
+    group_by(Team) %>%
+    mutate(
+      Wins = cumsum(WINorLOSS),
+      #GamesPlayed = count(Game),
+      TeamPoints = cummean(TeamPoints),
+      PtDifferential = cummean(PtDifferential),
+      FieldGoals = cummean(FieldGoals),
+      FieldGoalsAttempted = cummean(FieldGoalsAttempted),
+      FieldGoals. = cummean(FieldGoals.),
+      X3PointShots = cummean(X3PointShots),
+      X3PointShotsAttempted = cummean(X3PointShotsAttempted),
+      X3PointShots. = cummean(X3PointShots.),
+      FreeThrows = cummean(FreeThrows),
+      FreeThrowsAttempted = cummean(FreeThrowsAttempted),
+      FreeThrows. = cummean(FreeThrows.),
+      OffRebounds = cummean(OffRebounds),
+      DefRebounds = cummean(DefRebounds),
+      TotalRebounds = cummean(TotalRebounds),
+      Assists = cummean(Assists),
+      Steals = cummean(Steals),
+      Blocks = cummean(Blocks),
+      Turnovers = cummean(Turnovers),
+      TotalFouls = cummean(TotalFouls)
+    ) %>%
+    mutate(
+      Losses = Game - Wins,
+      WinPct = Wins / Game,
+      JoinDate = lead(Date) # Variable to join to later data. Averages are technically for AFTER the game happened
+    )
+  
+  return(teams)
+}
+```
+
+## Get Rolling Team Averages
+```{r}
+rolling15 <- getRollingTeams(nba15)
+rolling16 <- getRollingTeams(nba16)
+rolling17 <- getRollingTeams(nba17)
+rolling18 <- getRollingTeams(nba18)
+```
+
+## Subset Overall Games
+```{r}
+games <- nba %>%
+  select(Team, Game, Date, Opponent, WINorLOSS)
+```
+
+## Create Team & Opponent Join Tables
+```{r}
+# Need one table to join TEAM stats and one to join OPPONENT stats
+# DF to hold all rolling stats
+rollingStats <- rbind(rolling15, rolling16, rolling17, rolling18)
+
+# Create two dataframes
+teams <- rollingStats
+colnames(teams) <- paste("TEAM", colnames(teams), sep = "_")
+opps <- rollingStats
+colnames(opps) <- paste("OPP", colnames(opps), sep = "_")
+
+```
+
+## Join TEAM & OPP Stats
+```{r}
+games <- games %>%
+  left_join(teams, by = c("Team" = "TEAM_Team", "Date" = "TEAM_JoinDate")) %>%
+  left_join(opps, by = c("Opponent" = "OPP_Team", "Date" = "OPP_JoinDate"))
+```
+
+## Drop Any NA Rows
+```{r}
+games <- na.omit(games)
+```
+
+## Drop Unused Columns
+```{r}
+drop.cols <- c("TEAM_WINorLOSS", "OPP_WINorLOSS", "TEAM_Date", "OPP_Date", "TEAM_Game", "OPP_Game", "Team", "Game", "Date", "Opponent")
+
+games <- games %>%
+  select(-one_of(drop.cols))
+```
+
+## Convert WINorLOSS back to W/L
+```{r}
+games <- games %>%
+  mutate(
+    WINorLOSS = case_when(
+      WINorLOSS == 1 ~ 'W',
+      T ~ 'L'
+    )
+  ) %>%
+  mutate(
+    WINorLOSS = as.factor(WINorLOSS)
+  )
+```
+
+
+# Exploratory Analysis
+## Winners - Home vs Away
+```{r}
+# Plot breakout of winners
+ggplot(games, aes(WINorLOSS, fill = WINorLOSS)) +
+  geom_bar(stat = "count") +
+  ggtitle("Distribution of Winners") +
+  labs(x = "Winner", y = "Count")
+```
+
+# Modeling 
+## Split Data into Train/Test
+```{r}
+# Shuffle data
+games <- games[sample(nrow(games), nrow(games)), ]
+
+# Create a split index
+split_ind <- floor(0.75*nrow(games))
+
+# Split into training and testing
+train <- games[1:split_ind, ]
+test <- games[(split_ind+1):nrow(games), ]
+```
+
+### Plot WINNER for both train & test
+```{r}
+ggplot(train, aes(WINorLOSS, fill=WINorLOSS)) +
+  geom_bar(stat="count") +
+  ggtitle("Distribution of Training Winners")
+
+ggplot(test, aes(WINorLOSS, fill=WINorLOSS)) +
+  geom_bar(stat="count") +
+  ggtitle("Distribution of Testing Winners")
+```
+
+## Basic Tree Model
+### Load Libraries
+```{r}
+library(rpart)
+library(party)
+library(maptree)
+library(partykit)
+```
+
+### Create Model
+```{r}
+basicTree <- rpart(WINorLOSS ~ ., data = train, method = 'class')
+
+# Plot tree
+draw.tree (basicTree, cex=1.1, 
+           nodeinfo=TRUE,
+           cases="obs",
+           digits=1, print.levels=TRUE,
+           new=TRUE)
+```
+
+### Generate Predictions using Basic Tree
+```{r}
+# Generate preds
+preds <- predict(basicTree, test, type = 'class')
+
+# Compare to actual values
+actuals <- test$WINorLOSS
+
+correct <- 0
+
+for (i in 1:length(actuals))
+{
+  if(actuals[i] == preds[i])
+  {
+    correct = correct + 1
+  }
+}
+
+# Print prediction accuracy
+print(correct / length(actuals))
+```
+
+### Random Forest
+```{r}
+library(randomForest)
+
+rf <- randomForest(WINorLOSS ~ ., data=train)
+
+pred <- predict(rf, newdata = test[, c(2:47)])
+
+cm <- table(test[,1], pred)
+```
+
+# Tidymodels
+## Split Data Into Train/Test
+```{r}
+# Split data on 70/30 ratio
+games_split <- initial_split(games, prop = 0.7)
+```
